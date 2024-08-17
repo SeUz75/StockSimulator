@@ -152,22 +152,32 @@ public class DataBaseHelper extends SQLiteOpenHelper {
         db.close();
     }
 
-    public void addStockToUser(int userId, int stockId, int quantityPossesed) {
+    public void addStockToUser(int userId, int stockId, int quantity) {
         SQLiteDatabase db = this.getWritableDatabase();
-        ContentValues values = new ContentValues();
-        values.put(USERTOSTOCK_ID, userId);
-        values.put(STOCKTOUSER_ID, stockId);
-        values.put(QUANTITYPOSSESED, quantityPossesed);
 
-        Cursor cursor = db.rawQuery("SELECT " + QUANTITYPOSSESED + " FROM " + TABLE_USER_STOCKS + " WHERE " + USERTOSTOCK_ID + " = ? AND " + STOCKTOUSER_ID + " = ?",
-                new String[]{String.valueOf(userId), String.valueOf(stockId)});
+        // Check if the user already owns some quantity of this stock
+        String query = "SELECT quantity FROM user_stocks WHERE user_id = ? AND stock_id = ?";
+        Cursor cursor = db.rawQuery(query, new String[]{String.valueOf(userId), String.valueOf(stockId)});
+
         if (cursor.moveToFirst()) {
-            int existingQuantity = cursor.getInt(cursor.getColumnIndexOrThrow(QUANTITYPOSSESED));
-            values.put(QUANTITYPOSSESED, existingQuantity + quantityPossesed);
-            db.update(TABLE_USER_STOCKS, values, USERTOSTOCK_ID + " = ? AND " + STOCKTOUSER_ID + " = ?", new String[]{String.valueOf(userId), String.valueOf(stockId)});
+            // User already owns this stock, update the quantity
+            int existingQuantity = cursor.getInt(cursor.getColumnIndexOrThrow("quantity"));
+            int newQuantity = existingQuantity + quantity;
+
+            ContentValues contentValues = new ContentValues();
+            contentValues.put("quantity", newQuantity);
+
+            db.update("user_stocks", contentValues, "user_id = ? AND stock_id = ?", new String[]{String.valueOf(userId), String.valueOf(stockId)});
         } else {
-            db.insert(TABLE_USER_STOCKS, null, values);
+            // User doesn't own this stock, insert a new entry
+            ContentValues contentValues = new ContentValues();
+            contentValues.put("user_id", userId);
+            contentValues.put("stock_id", stockId);
+            contentValues.put("quantity", quantity);
+
+            db.insert("user_stocks", null, contentValues);
         }
+
         cursor.close();
         db.close();
     }
@@ -229,8 +239,10 @@ public class DataBaseHelper extends SQLiteOpenHelper {
         SQLiteDatabase db = this.getReadableDatabase();
 
         // Define the SQL query to fetch stock symbols and quantities for the given user_id
-        // Correctly formatted SQL query
-        String query = "SELECT * FROM " + TABLE_USER_STOCKS + " INNER JOIN " + TABLE_USERS + " ON " + TABLE_USER_STOCKS + "." + USER_ID + " = " + TABLE_USERS + "." + USER_ID + " WHERE " + TABLE_USER_STOCKS + "." + USER_ID + " = ?";
+        String query = "SELECT " + TABLE_STOCKS + "." + STOCK_SYMBOL + ", " + TABLE_USER_STOCKS + "." + QUANTITYPOSSESED +
+                " FROM " + TABLE_USER_STOCKS +
+                " INNER JOIN " + TABLE_STOCKS + " ON " + TABLE_USER_STOCKS + "." + STOCKTOUSER_ID + " = " + TABLE_STOCKS + "." + STOCK_ID +
+                " WHERE " + TABLE_USER_STOCKS + "." + USERTOSTOCK_ID + " = ?";
 
         // Log the query being executed for debugging
         Log.d("Database", "Executing query: " + query + " with user ID: " + userId);

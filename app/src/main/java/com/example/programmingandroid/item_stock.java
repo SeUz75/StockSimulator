@@ -41,6 +41,17 @@ public class item_stock extends AppCompatActivity {
         setContentView(R.layout.activity_item_stock);
 
         dbHelper = new DataBaseHelper(this);  // Initialize your database helper
+        userId = getIntent().getIntExtra("USER_ID", -1); // Default value is -1 if USER_ID is not found
+
+        if (userId == -1) {
+            // Handle the case where userId is not passed or retrieved correctly
+            Log.e(TAG, "Failed to retrieve user ID");
+            Toast.makeText(this, "User ID not found", Toast.LENGTH_SHORT).show();
+            finish(); // Optionally close the activity if userId is critical
+            return;
+        }
+
+        Log.d(TAG, "User ID: " + userId); // For debugging
 
         // Set up spinners
         Spinner stockSpinner = findViewById(R.id.stock_spinner);
@@ -62,6 +73,7 @@ public class item_stock extends AppCompatActivity {
     }
 
     public void buyStock(View view) {
+        // Get selected stock symbol and quantity
         Spinner stockSpinner = findViewById(R.id.stock_spinner);
         Spinner quantitySpinner = findViewById(R.id.quantity_spinner);
 
@@ -70,42 +82,47 @@ public class item_stock extends AppCompatActivity {
 
         // Fetch the current stock price from the UI
         LinearLayout stocksContainer = findViewById(R.id.stocks_container);
-        String stockPriceString = "";
+        double stockPrice = 0.0;
         for (int i = 0; i < stocksContainer.getChildCount(); i++) {
             LinearLayout stockLayout = (LinearLayout) stocksContainer.getChildAt(i);
             TextView symbolView = (TextView) stockLayout.getChildAt(0);
             TextView priceView = (TextView) stockLayout.getChildAt(1);
             if (symbolView.getText().toString().equals(selectedStockSymbol)) {
-                stockPriceString = priceView.getText().toString().replace("Price: ", "");
+                String stockPriceString = priceView.getText().toString().replace("Price: ", "");
+                stockPrice = Double.parseDouble(stockPriceString);
                 break;
             }
         }
 
-        double stockPrice = Double.parseDouble(stockPriceString);
+        // Get the user's current balance
+        double userBalance = dbHelper.getUserBalance(userId);
+
+        // Calculate the total cost of the purchase
         double totalCost = stockPrice * quantity;
 
-        // Remove or comment out the balance check
-        // double currentBalance = dbHelper.getUserBalance(userId);
-        // Log.d("BuyStock", "Current Balance: " + currentBalance);
+        if (totalCost <= userBalance) {
+            // Deduct the total cost from the user's balance
+            double newBalance = userBalance - totalCost;
+            dbHelper.updateUserBalance(userId, newBalance);
 
-        // Skip balance deduction and checking
-        // if (currentBalance >= totalCost) {
-        // Get the stock ID from the database or create it if it doesn't exist
-        int stockId = dbHelper.getStockIdBySymbol(selectedStockSymbol);
-        if (stockId == -1) {
-            stockId = dbHelper.addStock(selectedStockSymbol, stockPrice);
+            // Add the stock to the user's portfolio
+            int stockId = dbHelper.getStockIdBySymbol(selectedStockSymbol);
+            if (stockId == -1) {
+                // If the stock doesn't exist, add it to the stocks table
+                stockId = dbHelper.addStock(selectedStockSymbol, stockPrice);
+            }
+
+            // Update the user's stock holdings
+            dbHelper.addStockToUser(userId, stockId, quantity);
+
+            // Show a confirmation message
+            Toast.makeText(this, "Stock purchased successfully!", Toast.LENGTH_SHORT).show();
+        } else {
+            // Show an error message if the user doesn't have enough balance
+            Toast.makeText(this, "Insufficient balance.", Toast.LENGTH_SHORT).show();
         }
-
-        // Add stock to the user's inventory
-        dbHelper.addStockToUser(userId, stockId, quantity);
-
-        // Show success message
-        Toast.makeText(item_stock.this, "Stock purchased successfully!", Toast.LENGTH_SHORT).show();
-        // } else {
-        // Show error message
-        // Toast.makeText(item_stock.this, "Insufficient balance!", Toast.LENGTH_SHORT).show();
-        // }
     }
+
 
     private void getStockDataForMultipleStocks() {
         StockApi stockApi = ApiClient.getStockApi();
