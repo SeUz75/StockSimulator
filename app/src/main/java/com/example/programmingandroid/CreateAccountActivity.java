@@ -39,8 +39,6 @@ public class CreateAccountActivity extends AppCompatActivity {
         String username = textViewUsername.getText().toString().trim();
         String password = textViewPassword.getText().toString().trim();
 
-        dbHelper.createUser(username, password);
-
         // Validate inputs
         if (username.isEmpty() || password.isEmpty()) {
             Toast.makeText(this, "Please enter both username and password", Toast.LENGTH_SHORT).show();
@@ -61,9 +59,6 @@ public class CreateAccountActivity extends AppCompatActivity {
             Intent intent = new Intent(this, MainActivity.class);
             startActivity(intent);
             finish();  // Close the current activity so user cannot go back to it
-
-
         }
-
     }
 }
