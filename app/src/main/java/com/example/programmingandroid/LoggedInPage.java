@@ -6,6 +6,7 @@ import android.database.sqlite.SQLiteDatabase;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.LinearLayout;
 import android.widget.Spinner;
@@ -21,6 +22,7 @@ import androidx.core.view.WindowInsetsCompat;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -33,6 +35,7 @@ public class LoggedInPage extends AppCompatActivity {
     private DataBaseHelper dbHelper;
     private TextView textViewBalance;
     private TextView textViewUsername;
+    private TextView textViewCurrentPrice;
     private int userId;
 
     @Override
@@ -59,6 +62,8 @@ public class LoggedInPage extends AppCompatActivity {
             Log.d("LoggedInPage", "User ID: " + userId);
 
             displayUserStocks(); // Make sure this is called after userId is set
+            List<User_Stock> userStocks = dbHelper.getUserStocks(userId); // Fetch stocks for spinners
+            setUpSpinners(userStocks); // Initialize spinners with the user's stocks
         } else {
             Log.d("LoggedInPage", "Username is null, cannot retrieve user ID");
         }
@@ -117,27 +122,6 @@ public class LoggedInPage extends AppCompatActivity {
     }
 
 
-    private void setUpSpinners(List<User_Stock> userStocks) {
-        Spinner stockSpinner = findViewById(R.id.sell_stock_spinner);
-        Spinner quantitySpinner = findViewById(R.id.sell_quantity_spinner);
-
-        List<String> stockSymbols = new ArrayList<>();
-        List<Integer> quantities = new ArrayList<>();
-
-        for (User_Stock stock : userStocks) {
-            stockSymbols.add(stock.getSymbol());
-            quantities.add(stock.getQuantity());
-        }
-
-        // Set up adapters for spinners
-        ArrayAdapter<String> stockAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, stockSymbols);
-        stockAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        stockSpinner.setAdapter(stockAdapter);
-
-        ArrayAdapter<Integer> quantityAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, quantities);
-        quantityAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        quantitySpinner.setAdapter(quantityAdapter);
-    }
 
 
 
@@ -164,6 +148,27 @@ public class LoggedInPage extends AppCompatActivity {
 
         String stockSymbol = stockSpinner.getSelectedItem().toString();
         int quantity = (Integer) quantitySpinner.getSelectedItem();
+
+        // Retrieve the user's ID (Assuming you have the user's ID from somewhere in your activity)
+        int userId = dbHelper.getUserIdByUsername(getIntent().getStringExtra("USERNAME"));
+
+        // Fetch the user's stocks
+        List<User_Stock> userStocks = dbHelper.getUserStocks(userId);
+        User_Stock selectedStock = null;
+
+        // Find the selected stock in the user's portfolio
+        for (User_Stock userStock : userStocks) {
+            if (userStock.getSymbol().equals(stockSymbol)) {
+                selectedStock = userStock;
+                break;
+            }
+        }
+
+        // Validate the selected quantity
+        if (selectedStock == null || selectedStock.getQuantity() < quantity) {
+            Toast.makeText(this, "Insufficient stock quantity", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
         // Fetch current stock price and update balance
         getStockPrice(stockSymbol, new StockPriceCallback() {
@@ -192,6 +197,49 @@ public class LoggedInPage extends AppCompatActivity {
             @Override
             public void onFailure(Throwable t) {
                 Toast.makeText(LoggedInPage.this, "Failed to sell stock: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+
+    private void setUpSpinners(List<User_Stock> userStocks) {
+        Spinner stockSpinner = findViewById(R.id.sell_stock_spinner);
+        Spinner quantitySpinner = findViewById(R.id.sell_quantity_spinner);
+
+        List<String> stockSymbols = new ArrayList<>();
+        final Map<String, List<Integer>> stockQuantitiesMap = new HashMap<>();
+
+        // Populate stock symbols and corresponding quantities
+        for (User_Stock stock : userStocks) {
+            stockSymbols.add(stock.getSymbol());
+            List<Integer> quantities = new ArrayList<>();
+            for (int i = 1; i <= stock.getQuantity(); i++) {
+                quantities.add(i);
+            }
+            stockQuantitiesMap.put(stock.getSymbol(), quantities);
+        }
+
+        // Set up adapters for stockSpinner
+        ArrayAdapter<String> stockAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, stockSymbols);
+        stockAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        stockSpinner.setAdapter(stockAdapter);
+
+        // Set up quantity spinner based on selected stock
+        stockSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                String selectedStockSymbol = stockSymbols.get(position);
+                List<Integer> quantities = stockQuantitiesMap.get(selectedStockSymbol);
+
+                // Update quantity spinner based on selected stock
+                ArrayAdapter<Integer> quantityAdapter = new ArrayAdapter<>(LoggedInPage.this, android.R.layout.simple_spinner_item, quantities);
+                quantityAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+                quantitySpinner.setAdapter(quantityAdapter);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+                // Optional: Handle case when no stock is selected
             }
         });
     }
@@ -252,10 +300,12 @@ public class LoggedInPage extends AppCompatActivity {
         for (User_Stock userStock : userStocks) {
             Log.d("DisplayUserStocks", "Displaying stock: " + userStock.getSymbol());
 
+            // Create a new LinearLayout for each stock
             LinearLayout stockLayout = new LinearLayout(this);
             stockLayout.setOrientation(LinearLayout.HORIZONTAL);
             stockLayout.setPadding(8, 8, 8, 8);
 
+            // Create new TextViews for the stock symbol, quantity, and price
             TextView textViewSymbol = new TextView(this);
             textViewSymbol.setText("Symbol: " + userStock.getSymbol());
             textViewSymbol.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
@@ -264,10 +314,35 @@ public class LoggedInPage extends AppCompatActivity {
             textViewQuantity.setText("Quantity: " + userStock.getQuantity());
             textViewQuantity.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
 
+            TextView textViewPrice = new TextView(this);
+            textViewPrice.setText("Price: Fetching..."); // Placeholder text while price is being fetched
+            textViewPrice.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+
+            // Add TextViews to the stockLayout
             stockLayout.addView(textViewSymbol);
             stockLayout.addView(textViewQuantity);
+            stockLayout.addView(textViewPrice);
 
+            // Add the stockLayout to the container
             stocksContainer.addView(stockLayout);
+
+            // Fetch the price and update the UI
+            getStockPrice(userStock.getSymbol(), new StockPriceCallback() {
+                @Override
+                public void onSuccess(double stockPrice) {
+                    runOnUiThread(() -> {
+                        textViewPrice.setText("Price: $" + String.format("%.2f", stockPrice));
+                    });
+                }
+
+                @Override
+                public void onFailure(Throwable t) {
+                    runOnUiThread(() -> {
+                        textViewPrice.setText("Price: N/A");
+                        Toast.makeText(LoggedInPage.this, "Failed to fetch price for " + userStock.getSymbol(), Toast.LENGTH_SHORT).show();
+                    });
+                }
+            });
         }
     }
 }
